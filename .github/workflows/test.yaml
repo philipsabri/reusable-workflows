@@ -7,9 +7,37 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
+      - uses: actions/checkout@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.REUSABLE_GITHUB_TOKEN }}
+          repository: philipsabri/argocd
+          token: ${{ secrets.REUSABLE_GITHUB_TOKEN }}
+      - name: Install YQ
+        uses: dcarbone/install-yq-action@v1.1.0
+
+      - name: Bump version and push tag
+        uses: anothrNick/github-tag-action@1.61.0
+        id: create_tag
+        if: steps.check_files.outputs.docker
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BUMP: "patch"
+          RELEASE_BRANCHES: "main"
+
+      - run: yq -i '.test-app-chart.image.test = "${{ steps.create_tag.outputs.tag }}"' test-app/deployment/values-dev.yaml
+
+      # Commit and push to argocd repo (app-of-apps)
+      - name: Git Commit argocd
+        working-directory: argocd
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Update tag"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.REUSABLE_GITHUB_TOKEN }}
+          branch: main
+          directory: argocd
+          repository: philipsabri/argocd
